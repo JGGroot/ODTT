@@ -34,6 +34,10 @@ for attempt in range(6):
         page = fetch(site).decode('utf-8')
         if '<title>ODTT — On Demand Tactical Terrain</title>' not in page:
             raise RuntimeError('The published page does not contain the ODTT title.')
+        if '<option value="lapalma" selected>La Palma</option>' not in page:
+            raise RuntimeError('La Palma is not the published default preset.')
+        if 'Scott Air Force Base' in page or 'RAF Mildenhall' in page:
+            raise RuntimeError('An air force base preset is still present.')
         assets = Assets()
         assets.feed(page)
         for asset in assets.urls:
