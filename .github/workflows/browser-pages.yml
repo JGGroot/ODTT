@@ -2,9 +2,9 @@ name: Browser app
 on:
   push:
     branches: [main, master]
-    paths: ['browser/**', '.github/workflows/browser-pages.yml']
+    paths: ['browser/**', '.github/workflows/browser-pages.yml', '.github/scripts/**']
   pull_request:
-    paths: ['browser/**', '.github/workflows/browser-pages.yml']
+    paths: ['browser/**', '.github/workflows/browser-pages.yml', '.github/scripts/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,6 +45,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify published app
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: python .github/scripts/verify-pages.py "$SITE_URL"
