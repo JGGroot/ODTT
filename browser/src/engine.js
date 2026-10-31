@@ -38,14 +38,20 @@ export function vectorTile(wasm,features,tile,settings) {
   } finally {for(const o of owned.reverse())o.delete();}
 }
 export function surfaceHeights(elevation,features,settings) {
-  const {grid,w,h,min,max}=elevation;
+  const {grid,w,h}=elevation;
   const heights=new Float32Array(grid.length),labels=new Uint8Array(grid.length);
   const ocean=settings.flattenOcean?Uint8Array.from(grid,v=>v<=0):null;
-  // The base is only the slab under the lowest terrain sample. Exaggeration scales
-  // relief above that sample. Sea level is the sample when the area contains ocean,
-  // so an island still rises from a flat sea instead of from its shoreline.
-  let sea=false;if(ocean)for(let i=0;i<ocean.length;i++)if(ocean[i]){sea=true;break;}
-  const low=sea?0:min,range=Math.max(max-low,.001),exaggeration=settings.exaggeration??1;
+  // The base is only the slab under the lowest land sample. Exaggeration scales
+  // relief above that sample. Flattened ocean sits on the same base; it is not
+  // the vertical zero, or a coastline would lift every valley by its altitude.
+  let low=Infinity,high=-Infinity;
+  for(let i=0;i<grid.length;i++){
+    if(ocean&&ocean[i])continue;
+    const v=grid[i];if(!Number.isFinite(v))continue;
+    low=Math.min(low,v);high=Math.max(high,v);
+  }
+  if(!Number.isFinite(low)){low=0;high=0;}
+  const range=Math.max(high-low,.001),exaggeration=settings.exaggeration??1;
   const codes={water:1,greenery:2,roads:3,runways:4,railways:5,buildings:6};
   for(let row=0;row<h;row++)for(let col=0;col<w;col++) {
     const i=row*w+col,v=ocean&&ocean[i]?0:grid[i]-low;
@@ -55,6 +61,8 @@ export function surfaceHeights(elevation,features,settings) {
   }
   if(settings.smooth>0&&settings.terrainMode!=='stepped'){const copy=heights.slice();for(let row=1;row<h-1;row++)for(let col=1;col<w-1;col++){let sum=0;for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)sum+=copy[(row+dy)*w+col+dx];const i=row*w+col;heights[i]=copy[i]*(1-settings.smooth)+sum/9*settings.smooth;}}
   if(ocean)for(let i=0;i<heights.length;i++)if(ocean[i]){heights[i]=settings.base;labels[i]=1;}
+  let landMin=Infinity;for(let i=0;i<heights.length;i++)if(!ocean||!ocean[i])landMin=Math.min(landMin,heights[i]);
+  if(Number.isFinite(landMin)){const shift=landMin-settings.base;if(shift)for(let i=0;i<heights.length;i++)if(!ocean||!ocean[i])heights[i]-=shift;}
   // Paint feature heights onto terrain. Work only in each feature's bounds.
   if(features.length){
     const priority={greenery:1,water:2,roads:3,runways:4,railways:5,buildings:6};

@@ -90,7 +90,7 @@ test('ocean stays exactly flat through smoothing and exaggeration; island land r
   const surface=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],settings);
   for(let i=0;i<grid.length;i++)if(grid[i]<=0){close(surface.heights[i],2);assert.equal(surface.labels[i],1);}assert.ok(surface.heights[8]>2);
   const raw=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,smooth:0});
-  close(raw.heights[8],62);close(raw.heights[7],17);
+  close(raw.heights[8],62);close(raw.heights[7],2);
   const plain=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,flattenOcean:false,smooth:0,exaggeration:1});
   const doubled=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,flattenOcean:false,smooth:0,exaggeration:2});
   for(let i=0;i<grid.length;i++)close(doubled.heights[i]-2,2*(plain.heights[i]-2),1e-5);
@@ -116,6 +116,17 @@ test('exaggeration keeps the base under the lowest terrain sample',async()=>{
     if(terrainScale==='relief'){close(maxOnce,shared.base+16);close(maxTriple,shared.base+48);}
     else{close(maxOnce,shared.base+(2400-1200)*shared.scale);close(maxTriple,shared.base+(2400-1200)*shared.scale*3);}
   }
+});
+
+test('a sea-level sample does not lift the surrounding land off the base',async()=>{
+  const {surfaceHeights}=await import('../src/engine.js');
+  const grid=Float32Array.from([0,1500,1500,1800]);
+  const shared={base:3,relief:10,flattenOcean:true,terrainScale:'relief',terrainMode:'smooth',smooth:0,width:20,height:20,scale:.02,exaggeration:4};
+  const surface=surfaceHeights({grid,w:2,h:2,min:0,max:1800},[],shared);
+  close(surface.heights[0],3);assert.equal(surface.labels[0],1);
+  close(surface.heights[1],3);close(surface.heights[2],3);close(surface.heights[3],3+40);
+  const scaled=surfaceHeights({grid,w:2,h:2,min:0,max:1800},[],{...shared,terrainScale:'true'});
+  close(scaled.heights[0],3);close(scaled.heights[1],3);close(scaled.heights[3],3+(1800-1500)*shared.scale*4);
 });
 
 test('Skadi ocean voids become sea level only when ocean flattening is enabled',async()=>{
