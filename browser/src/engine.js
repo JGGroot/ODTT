@@ -1,3 +1,4 @@
+import { cutoffHeights, terrainPalette } from './terrain-colors.js';
 import { heightMesh, combineMeshes } from './mesh.js';
 import { bilinear, pointInPolygon } from './geo.js';
 export function toNative(wasm,m) {return new wasm.Manifold(new wasm.Mesh({numProp:3,vertProperties:m.vertices,triVerts:m.indices}));}
@@ -118,4 +119,27 @@ export function trackInsert(wasm,objects,polygons,tile,settings) {
     if(insert.isEmpty())return objects;
     return [{...toPlain(terrain),group:'terrain'},{...toPlain(insert),group:'track'}];
   }finally{for(const o of owned.reverse())o.delete();}
+}
+
+// Intersect the closed terrain with horizontal slabs. Each material is a closed,
+// non-overlapping volume with a boundary aligned to the chosen print layer.
+export function splitTerrainColors(wasm,objects,settings) {
+  if(settings.colorMode!=='cutoffs')return objects;
+  const palette=terrainPalette(settings),cuts=cutoffHeights(settings),result=[];
+  for(const o of objects){
+    if(o.group!=='terrain'){result.push(o);continue;}
+    const owned=[],own=v=>(owned.push(v),v);
+    try {
+      const solid=own(toNative(wasm,o));let maxZ=0,maxX=0,maxY=0;
+      for(let i=0;i<o.vertices.length;i+=3){maxX=Math.max(maxX,o.vertices[i]);maxY=Math.max(maxY,o.vertices[i+1]);maxZ=Math.max(maxZ,o.vertices[i+2]);}
+      for(let i=0;i<palette.length;i++){
+        const bottom=cuts[i],top=i===palette.length-1?maxZ+1:cuts[i+1];
+        if(top<=bottom||bottom>=maxZ)continue;
+        const box=own(own(wasm.Manifold.cube([maxX+2,maxY+2,top-bottom])).translate([-1,-1,bottom]));
+        const part=own(solid.intersect(box));if(part.isEmpty())continue;
+        result.push({...toPlain(part),group:'terrain',name:palette[i].name,color:palette[i].color,offset:o.offset});
+      }
+    }finally{for(const v of owned.reverse())v.delete();}
+  }
+  return result;
 }

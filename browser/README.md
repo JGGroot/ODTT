@@ -79,3 +79,26 @@ Flatten ocean clamps elevations at or below 0 m to the model base and preserves 
 La Palma is the default area, opening in Terrain mode with Flatten ocean enabled. Santa Maria is also available as a whole-island preset; selecting either island enables Flatten ocean. Native elevation detail still depends on the chosen source and mesh spacing. Browser surface grids cap at 900,000 cells; the whole-area mesh and all tiles share the same elevation samples.
 
 Regional LiDAR and imported GeoTIFF sources can mark ocean as missing data. With Flatten ocean enabled, missing samples are filled at sea level only where the global Mapzen reference also reports sea level or below. Missing land remains subject to the normal gap checks; valid high-resolution land samples remain unchanged. Combined outputs retain both source credits. This coastline reference is limited by the global dataset's native detail.
+
+
+Terrain colors in the browser
+-----------------------------
+
+Choose **Terrain colors** when generating terrain, a heightmap, or OSM with terrain.
+Each of the five editable stops (forest, grass, earth, rock and snow) has a color
+and starting height in percent of the whole model's relief. Regenerate to apply.
+
+* **Realistic** uses elevation and a configurable rock slope. OSM and ocean face
+  colors take precedence. These are artistic colors rather than measured land cover.
+* **Layer cutoffs** makes separate closed horizontal material volumes, with
+  boundaries rounded to your print layer height. All tiles share the same cutoffs.
+  This replaces OSM/ocean face colors and generally reduces changes per layer.
+* **Gradient** interpolates the five stops into 4, 8 or 16 discrete materials.
+  More colors may mean more swaps and purge waste. Combine materials in the slicer
+  to match your AMS slots or tool count.
+
+Export **3MF** to keep materials and the assembled placement of the parts.
+Assign each material to a filament/tool in your slicer; face-material support varies
+between slicers. Cutoff mode provides closed volumes for material assignment.
+STL has no color information. No printer-specific G-code or swap estimate is produced;
+check your slicer's preview before printing, especially with variable layer heights.

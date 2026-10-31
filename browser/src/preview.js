@@ -16,9 +16,15 @@ export class Preview {
   setModel(tiles,settings){
     this.clear(this.group);this.clear(this.overlays);this.settings=settings;
     for(const tile of tiles)for(const o of tile.objects){
-      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(o.vertices,3));g.setIndex(new THREE.BufferAttribute(o.indices,1));g.computeVertexNormals();
-      const material=new THREE.MeshStandardMaterial({color:COLORS[o.group]||COLORS.terrain,roughness:.78,metalness:0,wireframe:this.wire});
-      if(o.labels){const colors=new Float32Array(o.vertices.length),names=['terrain','water','greenery','roads','runways','railways','buildings'];for(let i=0;i<o.vertices.length/3;i++){const c=new THREE.Color(COLORS[names[o.labels[i]||0]]);colors.set([c.r,c.g,c.b],i*3);}g.setAttribute('color',new THREE.BufferAttribute(colors,3));material.vertexColors=true;material.color.set(0xffffff);}
+      let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(o.vertices,3));g.setIndex(new THREE.BufferAttribute(o.indices,1));g.computeVertexNormals();
+      const material=new THREE.MeshStandardMaterial({color:o.color||COLORS[o.group]||COLORS.terrain,roughness:.78,metalness:0,flatShading:Boolean(o.color),wireframe:this.wire});
+      if(o.labels&&!o.faceMaterials){const colors=new Float32Array(o.vertices.length),names=['terrain','water','greenery','roads','runways','railways','buildings'];for(let i=0;i<o.vertices.length/3;i++){const c=new THREE.Color(COLORS[names[o.labels[i]||0]]);colors.set([c.r,c.g,c.b],i*3);}g.setAttribute('color',new THREE.BufferAttribute(colors,3));material.vertexColors=true;material.color.set(0xffffff);}
+      if(o.faceMaterials){
+        const indexed=g;g=g.toNonIndexed();indexed.dispose();const colors=new Float32Array(o.indices.length*3);
+        const palette=o.materials.map(m=>new THREE.Color(m.color||COLORS[m.feature]||COLORS.terrain));
+        for(let i=0;i<o.faceMaterials.length;i++){const c=palette[o.faceMaterials[i]];for(let k=0;k<3;k++)colors.set([c.r,c.g,c.b],i*9+k*3);}
+        g.setAttribute('color',new THREE.BufferAttribute(colors,3));material.vertexColors=true;material.color.set(0xffffff);
+      }
       const mesh=new THREE.Mesh(g,material);mesh.position.set(tile.tile.x,tile.tile.y,0);this.group.add(mesh);
     }
     const box=new THREE.Box3().setFromObject(this.group),maxZ=box.max.z;
@@ -27,5 +33,5 @@ export class Preview {
   }
   fit(top=false){if(!this.group.children.length)return;const box=new THREE.Box3().setFromObject(this.group),center=box.getCenter(new THREE.Vector3()),direction=(top?new THREE.Vector3(.00001,-.00001,1):new THREE.Vector3(.75,-.9,.82)).normalize(),right=new THREE.Vector3().crossVectors(this.camera.up,direction).normalize(),up=new THREE.Vector3().crossVectors(direction,right),tan=Math.tan(THREE.MathUtils.degToRad(this.camera.fov/2));let distance=1;for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const p=new THREE.Vector3(x,y,z).sub(center);distance=Math.max(distance,p.dot(direction)+Math.abs(p.dot(right))/(tan*this.camera.aspect),p.dot(direction)+Math.abs(p.dot(up))/tan);}distance*=1.15;this.controls.target.copy(center);this.camera.position.copy(center).addScaledVector(direction,distance);this.camera.near=Math.max(.01,distance/10000);this.camera.far=distance*10;this.camera.updateProjectionMatrix();this.controls.update();}
   setGrid(value){this.gridOn=value;this.overlays.visible=value;}
-  setWire(value){this.wire=value;for(const m of this.group.children)m.material.wireframe=value;}
+  setWire(value){this.wire=value;for(const m of this.group.children)for(const material of Array.isArray(m.material)?m.material:[m.material])material.wireframe=value;}
 }

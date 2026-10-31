@@ -15,23 +15,26 @@ export function stl(mesh) {
 }
 export function threeMF(objects, metadata={}) {
   const labelNames=['terrain','water','greenery','roads','runways','railways','buildings'];
-  const names=[...new Set(objects.flatMap(o=>o.labels?[o.group,...Array.from(new Set(o.labels)).map(c=>labelNames[c])]:[o.group]))];
+  const materials=[],maps=[];
+  const add=(name,color)=>{color=color||COLORS[name]||COLORS.terrain;let i=materials.findIndex(m=>m.name===name&&m.color===color);if(i<0){i=materials.length;materials.push({name,color});}return i;};
+  for(const o of objects){const custom=o.materials?.map(m=>add(m.name,m.color||COLORS[m.feature]));const base=custom?.[0]??add(o.name||o.group,o.color||COLORS[o.group]);const labels=o.labels&&!custom?[]:null;if(labels){for(const code of new Set(o.labels))labels[code]=add(labelNames[code],COLORS[labelNames[code]]);labels[0]=add(labelNames[0],COLORS[labelNames[0]]);}maps.push({base,custom,labels});}
   const chunks=['<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'];
   for(const [k,v] of Object.entries(metadata))chunks.push(`<metadata name="${xml(k)}">${xml(v)}</metadata>`);
   chunks.push('<resources><basematerials id="1">');
-  for(const name of names)chunks.push(`<base name="${xml(name)}" displaycolor="${COLORS[name]||COLORS.terrain}FF"/>`);
+  for(const m of materials)chunks.push(`<base name="${xml(m.name)}" displaycolor="${m.color}FF"/>`);
   chunks.push('</basematerials>');
   objects.forEach((o,i)=>{
-    chunks.push(`<object id="${i+2}" name="${xml(o.name||o.group)}" type="model" pid="1" pindex="${names.indexOf(o.group)}"><mesh><vertices>`);
+    chunks.push(`<object id="${i+2}" name="${xml(o.name||o.group)}" type="model" pid="1" pindex="${maps[i].base}"><mesh><vertices>`);
     const p=o.vertices,t=o.indices;
     for(let j=0;j<p.length;j+=3)chunks.push(`<vertex x="${p[j].toFixed(6)}" y="${p[j+1].toFixed(6)}" z="${p[j+2].toFixed(6)}"/>`);
     chunks.push('</vertices><triangles>');
-    for(let j=0;j<t.length;j+=3){let property='';if(o.labels){const a=o.labels[t[j]]||0,b=o.labels[t[j+1]]||0,c=o.labels[t[j+2]]||0,code=b===c?b:a;property=` pid="1" p1="${names.indexOf(labelNames[code])}"`;}chunks.push(`<triangle v1="${t[j]}" v2="${t[j+1]}" v3="${t[j+2]}"${property}/>`);}
+    for(let j=0;j<t.length;j+=3){let material=maps[i].base;if(o.faceMaterials)material=maps[i].custom[o.faceMaterials[j/3]];else if(o.labels){const a=o.labels[t[j]]||0,b=o.labels[t[j+1]]||0,c=o.labels[t[j+2]]||0;material=maps[i].labels[b===c?b:a];}chunks.push(`<triangle v1="${t[j]}" v2="${t[j+1]}" v3="${t[j+2]}" pid="1" p1="${material}"/>`);}
     chunks.push('</triangles></mesh></object>');
   });
-  chunks.push('</resources><build>');
-  objects.forEach((o,i)=>{const [x,y,z]=o.offset||[0,0,0];chunks.push(`<item objectid="${i+2}" transform="1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}"/>`);});
-  chunks.push('</build></model>');
+  const assembly=objects.length+2;
+  chunks.push(`<object id="${assembly}" name="ODTT assembly" type="model"><components>`);
+  objects.forEach((o,i)=>{const [x,y,z]=o.offset||[0,0,0];chunks.push(`<component objectid="${i+2}" transform="1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}"/>`);});
+  chunks.push(`</components></object></resources><build><item objectid="${assembly}"/></build></model>`);
   return zipSync({
     '[Content_Types].xml':strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'),
     '_rels/.rels':strToU8('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'),
