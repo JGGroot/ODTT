@@ -41,10 +41,14 @@ export function surfaceHeights(elevation,features,settings) {
   const {grid,w,h,min,max}=elevation;
   const heights=new Float32Array(grid.length),labels=new Uint8Array(grid.length);
   const ocean=settings.flattenOcean?Uint8Array.from(grid,v=>v<=0):null;
-  const low=ocean?0:min,range=Math.max(max-low,.001),exaggeration=settings.exaggeration??1;
+  // The base is only the slab under the lowest terrain sample. Exaggeration scales
+  // relief above that sample. Sea level is the sample when the area contains ocean,
+  // so an island still rises from a flat sea instead of from its shoreline.
+  let sea=false;if(ocean)for(let i=0;i<ocean.length;i++)if(ocean[i]){sea=true;break;}
+  const low=sea?0:min,range=Math.max(max-low,.001),exaggeration=settings.exaggeration??1;
   const codes={water:1,greenery:2,roads:3,runways:4,railways:5,buildings:6};
   for(let row=0;row<h;row++)for(let col=0;col<w;col++) {
-    const i=row*w+col,v=ocean?Math.max(0,grid[i]):grid[i]-min;
+    const i=row*w+col,v=ocean&&ocean[i]?0:grid[i]-low;
     const meters=settings.terrainMode==='stepped'?Math.floor(v/settings.contourInterval)*settings.contourInterval:v;
     const z=settings.terrainScale==='true'?meters*settings.scale*exaggeration:meters/range*settings.relief*exaggeration;
     heights[i]=settings.base+z;
