@@ -1,6 +1,7 @@
+import { paintTerrain } from './terrain-colors.js';
 import Module from 'manifold-3d';
 import wasmURL from 'manifold-3d/manifold.wasm?url';
-import { vectorTile, surfaceTile, surfaceHeights, fullSurface, mergeSolids, trackInsert } from './engine.js';
+import { vectorTile, surfaceTile, surfaceHeights, fullSurface, mergeSolids, trackInsert, splitTerrainColors } from './engine.js';
 import { osmFeatures } from './osm.js';
 import { fetchTerrain } from './terrain.js';
 import { threeMF, stl } from './export.js';
@@ -16,6 +17,7 @@ self.onmessage=async({data})=>{
     else if(kind==='elevation')result=await fetchTerrain(payload.source,payload.bounds,payload.w,payload.h,undefined,text=>self.postMessage({id,progress:text}),payload.file,payload.options);
     else if(kind==='surface')result=surfaceHeights(payload.elevation,payload.features,payload.settings);
     else if(kind==='tile'){result=payload.surface?surfaceTile(payload.surface,payload.tile,payload.settings):vectorTile(await wasm(),payload.features,payload.tile,payload.settings);if(payload.track)result=trackInsert(await wasm(),result,payload.track,payload.tile,payload.settings);}
+    else if(kind==='color')result=payload.settings.colorMode==='cutoffs'?splitTerrainColors(await wasm(),payload.objects,payload.settings):paintTerrain(payload.objects,payload.settings,payload.origin);
     else if(kind==='merge')result=mergeSolids(await wasm(),payload.objects);
     else if(kind==='fullSurface')result=fullSurface(payload.surface,payload.settings);
     else if(kind==='trackFloor')result=insertFloor(payload.surface,payload.polygons,payload.settings);
