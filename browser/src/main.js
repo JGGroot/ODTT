@@ -19,7 +19,7 @@ const streetLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
 const satelliteLayer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,attribution:'Source: <a href="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer" target="_blank" rel="noreferrer">Esri</a>, Vantor, Earthstar Geographics, and the GIS User Community'});
 $('map-style').addEventListener('change',()=>{const satellite=$('map-style').value==='satellite';map.removeLayer(satellite?streetLayer:satelliteLayer);(satellite?satelliteLayer:streetLayer).addTo(map);$('map').classList.toggle('satellite',satellite);updateMapPOIs();});
 L.control.zoom({position:'bottomleft'}).addTo(map);
-const selection=L.rectangle([[presets.lapalma.south,presets.lapalma.west],[presets.lapalma.north,presets.lapalma.east]],{color:'#285d50',weight:1.8,fillColor:'#799d79',fillOpacity:.1}).addTo(map),mapGrid=L.layerGroup().addTo(map),handles=L.layerGroup().addTo(map);
+const selection=L.rectangle([[presets.lapalma.south,presets.lapalma.west],[presets.lapalma.north,presets.lapalma.east]],{color:'#285d50',weight:1.8,fillColor:'#799d79',fillOpacity:.1,className:'area-selection'}).addTo(map),mapGrid=L.layerGroup().addTo(map),handles=L.layerGroup().addTo(map);
 let preview;
 try{preview=new Preview($('preview'));}catch(e){$('preview-empty').textContent='3D preview needs WebGL. Downloads remain available.';}
 function bounds(){return {south:num('south'),north:num('north'),west:num('west'),east:num('east')};}
@@ -47,6 +47,20 @@ function setBounds(b,fit=true){b=validateBounds(aspectBounds(b,num('aspect-ratio
 function refreshHandles(){handles.clearLayers();const b=bounds();for(const [a,c] of [['south','west'],['south','east'],['north','west'],['north','east']]){const marker=L.marker([b[a],b[c]],{draggable:true,icon:L.divIcon({className:'',html:'<div class="handle"></div>',iconSize:[11,11],iconAnchor:[5,5]})}).addTo(handles);let fixed;
   marker.on('dragstart',()=>{const current=bounds();fixed={lat:current[a==='south'?'north':'south'],lng:current[c==='west'?'east':'west']};});
   marker.on('drag',()=>{const p=marker.getLatLng();try{const next=validateBounds(aspectBounds({south:Math.min(p.lat,fixed.lat),north:Math.max(p.lat,fixed.lat),west:Math.min(p.lng,fixed.lng),east:Math.max(p.lng,fixed.lng)},num('aspect-ratio'),fixed));writeBounds(next);$('preset').value='custom';}catch{}});marker.on('dragend',refreshHandles);}}
+let areaDrag=null;
+function onAreaPointerDown(ev){
+  if(drawing||running||areaDrag||ev.button!==0||ev.isPrimary===false)return;
+  ev.stopPropagation();ev.preventDefault();
+  const start=map.mouseEventToLatLng(ev);
+  areaDrag={lat:start.lat,lng:start.lng,origin:bounds(),pointer:ev.pointerId};
+  map.dragging.disable();selection.getElement()?.classList.add('dragging');handles.clearLayers();
+  try{selection.getElement().setPointerCapture(ev.pointerId);}catch{}
+}
+function bindAreaDrag(){const path=selection.getElement();if(!path||path.dataset.areaDrag)return;path.dataset.areaDrag='1';path.addEventListener('pointerdown',onAreaPointerDown);}
+selection.on('add',bindAreaDrag);bindAreaDrag();
+function moveArea(ev){if(!areaDrag)return;const p=map.mouseEventToLatLng(ev),dLat=p.lat-areaDrag.lat,dLng=p.lng-areaDrag.lng,o=areaDrag.origin;try{writeBounds(validateBounds({south:o.south+dLat,north:o.north+dLat,west:o.west+dLng,east:o.east+dLng}));$('preset').value='custom';}catch{}}
+function endAreaDrag(ev){if(!areaDrag)return;if(ev&&areaDrag.pointer!=null&&ev.pointerId!=null&&ev.pointerId!==areaDrag.pointer)return;areaDrag=null;selection.getElement()?.classList.remove('dragging');if(!drawing)map.dragging.enable();refreshHandles();}
+window.addEventListener('pointermove',moveArea);window.addEventListener('pointerup',endAreaDrag);window.addEventListener('pointercancel',endAreaDrag);
 function error(e){$('error').textContent=e.message||String(e);$('error').hidden=false;}
 function report(text,percent){$('status').textContent=text;if(percent!==undefined)$('progress').value=percent;}
 function setBusy(value){running=value;$('generate').hidden=value;$('cancel').hidden=!value;$('progress').hidden=!value;document.querySelectorAll('.inspector section').forEach(s=>{s.classList.toggle('busy',value);s.querySelectorAll('input,select,button').forEach(e=>e.disabled=value);});handles.eachLayer(m=>value?m.dragging.disable():m.dragging.enable());['export-stl','export-3mf','export-tiles','export-track'].forEach(id=>$(id).disabled=value||!model);document.querySelectorAll('nav button').forEach(b=>b.disabled=value);}

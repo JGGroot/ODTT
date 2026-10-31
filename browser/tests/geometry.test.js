@@ -89,12 +89,34 @@ test('ocean stays exactly flat through smoothing and exaggeration; island land r
   const settings={base:2,relief:20,exaggeration:3,flattenOcean:true,terrainScale:'relief',terrainMode:'smooth',smooth:.7,width:40,height:40};
   const surface=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],settings);
   for(let i=0;i<grid.length;i++)if(grid[i]<=0){close(surface.heights[i],2);assert.equal(surface.labels[i],1);}assert.ok(surface.heights[8]>2);
+  const raw=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,smooth:0});
+  close(raw.heights[8],62);close(raw.heights[7],17);
   const plain=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,flattenOcean:false,smooth:0,exaggeration:1});
   const doubled=surfaceHeights({grid,w:5,h:5,min:-500,max:400},[],{...settings,flattenOcean:false,smooth:0,exaggeration:2});
   for(let i=0;i<grid.length;i++)close(doubled.heights[i]-2,2*(plain.heights[i]-2),1e-5);
   const mesh=fullSurface(surface,settings);closed(mesh);assert.ok(meshVolume(mesh)>0);
 });
 
+
+test('exaggeration keeps the base under the lowest terrain sample',async()=>{
+  const {surfaceHeights}=await import('../src/engine.js');
+  const grid=Float32Array.from([1200,1500,1800,1600,2400,1700,1900,2100,1300]);
+  const elevation={grid,w:3,h:3,min:1200,max:2400};
+  const shared={base:2,relief:16,flattenOcean:true,terrainMode:'smooth',smooth:0,width:40,height:40,scale:.01};
+  for(const terrainScale of ['relief','true']){
+    const once=surfaceHeights(elevation,[],{...shared,terrainScale,exaggeration:1});
+    const triple=surfaceHeights(elevation,[],{...shared,terrainScale,exaggeration:3});
+    let minOnce=Infinity,minTriple=Infinity,maxOnce=-Infinity,maxTriple=-Infinity;
+    for(let i=0;i<grid.length;i++){
+      minOnce=Math.min(minOnce,once.heights[i]);minTriple=Math.min(minTriple,triple.heights[i]);
+      maxOnce=Math.max(maxOnce,once.heights[i]);maxTriple=Math.max(maxTriple,triple.heights[i]);
+      close(triple.heights[i]-shared.base,3*(once.heights[i]-shared.base),1e-4);
+    }
+    close(minOnce,shared.base);close(minTriple,shared.base);
+    if(terrainScale==='relief'){close(maxOnce,shared.base+16);close(maxTriple,shared.base+48);}
+    else{close(maxOnce,shared.base+(2400-1200)*shared.scale);close(maxTriple,shared.base+(2400-1200)*shared.scale*3);}
+  }
+});
 
 test('Skadi ocean voids become sea level only when ocean flattening is enabled',async()=>{
   const {gzipSync}=await import('fflate');const original=globalThis.fetch;const bytes=new Uint8Array(8),view=new DataView(bytes.buffer);for(let i=0;i<4;i++)view.setInt16(i*2,-32768,false);
