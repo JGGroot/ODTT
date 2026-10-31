@@ -7,6 +7,50 @@ export const TERRAIN_STOPS=[
   {name:'Rock',color:'#868a8d',at:72},
   {name:'Snow',color:'#f1f4f5',at:88}
 ];
+export const TERRAIN_LOOKS={
+  natural:{name:'Natural',colors:['#35633d','#809a48','#98704c','#868a8d','#f1f4f5']},
+  alpine:{name:'Alpine',colors:['#365b42','#83905b','#a08a6b','#858b90','#f4f6f6']},
+  lush:{name:'Lush',colors:['#254c37','#517a42','#8b985d','#817968','#a8aaa0']},
+  desert:{name:'Desert',colors:['#9b7747','#c8aa68','#b67c50','#8c7565','#dfc8a0']},
+  volcanic:{name:'Volcanic',colors:['#3c5940','#657847','#756356','#56575b','#a2a0a0']}
+};
+// Resolve once from the entire land surface, before tiling. Quantiles prevent a
+// tiny high peak or a large flat ocean from crowding all colors into one band.
+export function proceduralTerrainColors(s,surface,elevation={}) {
+  if(s.colorAutomatic===false)return s;
+  const look=TERRAIN_LOOKS[s.colorLook]||TERRAIN_LOOKS.natural;
+  const samples=[];let max=s.base;
+  for(let i=0;i<surface.heights.length;i++){
+    if(surface.labels?.[i]===1)continue;
+    const z=surface.heights[i];if(Number.isFinite(z)){samples.push(z);max=Math.max(max,z);}
+  }
+  samples.sort((a,b)=>a-b);const span=Math.max(.00001,max-s.base);
+  const quantiles=[0,.3,.62,.82,.95];let previous=0;
+  const stops=TERRAIN_STOPS.map((p,i)=>{
+    const z=samples[Math.floor((samples.length-1)*quantiles[i])]??s.base;
+    // Keep thresholds ordered on flat or plateau-heavy terrain.
+    const at=i?Math.min(95+i,Math.max(previous+1,(z-s.base)/span*100)):0;previous=at;
+    return {...p,color:look.colors[i],at};
+  });
+  if(s.colorLook==='natural'||!s.colorLook){
+    // Heightmaps have no measured altitude: their chosen look is artistic.
+    // Low geographic terrain should not get a white cap just for being tallest.
+    const snow=elevation.source==='image'||(Number.isFinite(elevation.max)&&elevation.max>=1800);
+    if(!snow){stops[4]={...stops[4],name:'High rock',color:'#b1b3ad'};}
+  }
+  if(s.colorLook==='desert')stops[4].name='Pale sandstone';
+  if(s.colorLook==='lush')stops[4].name='High rock';
+  if(s.colorLook==='volcanic')stops[4].name='Ash';
+  return {...s,colorStops:stops,colorMaxZ:max,rockSlope:s.rockSlope??38};
+}
+// Smooth, deterministic value noise in model-wide XY coordinates. Never use
+// tile-local randomness: it would make visible seams between adjacent tiles.
+function terrainVariation(x,y,scale) {
+  x/=scale;y/=scale;const ix=Math.floor(x),iy=Math.floor(y);
+  const smooth=t=>t*t*(3-2*t),fx=smooth(x-ix),fy=smooth(y-iy);
+  const hash=(a,b)=>{const v=Math.sin(a*127.1+b*311.7)*43758.5453;return v-Math.floor(v);};
+  return ((hash(ix,iy)*(1-fx)+hash(ix+1,iy)*fx)*(1-fy)+(hash(ix,iy+1)*(1-fx)+hash(ix+1,iy+1)*fx)*fy)*2-1;
+}
 export const FEATURE_NAMES=['terrain','water','greenery','roads','runways','railways','buildings'];
 export function validateTerrainColors(s) {
   if(!['off','realistic','cutoffs','gradient'].includes(s.colorMode))throw new Error('Choose a terrain color mode.');
@@ -31,7 +75,7 @@ export function cutoffHeights(s) {
   const span=Math.max(0,(s.colorMaxZ??s.base)-s.base),layer=s.colorLayerHeight||.2;
   return terrainPalette(s).map((p,i)=>i?Math.max(layer,Math.round((s.base+span*p.at/100)/layer)*layer):0);
 }
-export function paintTerrain(objects,s) {
+export function paintTerrain(objects,s,origin=[0,0]) {
   if(!s.colorMode||s.colorMode==='off'||s.colorMode==='cutoffs')return objects;
   const palette=terrainPalette(s),span=Math.max(.00001,s.colorMaxZ-s.base);
   return objects.map(o=>{
@@ -42,7 +86,13 @@ export function paintTerrain(objects,s) {
     const featureIndex=new Map();
     for(let j=0;j<o.indices.length;j+=3){
       const ids=Array.from(o.indices.subarray(j,j+3)),p=ids.map(i=>Array.from(o.vertices.subarray(i*3,i*3+3)));
-      const z=p.reduce((v,q)=>v+q[2],0)/3,percent=Math.max(0,Math.min(100,(z-s.base)/span*100));
+      const z=p.reduce((v,q)=>v+q[2],0)/3;
+      let percent=Math.max(0,Math.min(100,(z-s.base)/span*100));
+      if(s.colorMode==='realistic'&&s.colorAutomatic!==false&&z>s.base){
+        const x=origin[0]+p.reduce((v,q)=>v+q[0],0)/3,y=origin[1]+p.reduce((v,q)=>v+q[1],0)/3;
+        const scale=Math.max(s.width||1,s.height||1)*.16;
+        percent+=terrainVariation(x,y,scale)*7+terrainVariation(x,y,scale*.4)*2;
+      }
       let code=0;for(let k=1;k<palette.length;k++)if(percent>=palette[k].at)code=k;
       if(s.colorMode==='realistic'){
         const a=p[1].map((v,k)=>v-p[0][k]),b=p[2].map((v,k)=>v-p[0][k]);

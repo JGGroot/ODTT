@@ -85,15 +85,23 @@ Terrain colors in the browser
 -----------------------------
 
 Choose **Terrain colors** when generating terrain, a heightmap, or OSM with terrain.
-Each of the five editable stops (forest, grass, earth, rock and snow) has a color
-and starting height in percent of the whole model's relief. Regenerate to apply.
+Choose a landscape look (Natural, Alpine, Lush, Desert or Volcanic) and a color
+style. Placement is automatic: thresholds follow the distribution of land heights
+across the whole model, excluding ocean. Natural avoids white snow on geographic
+models below 1,800 m; heightmaps and Alpine use artistic snow caps. Realistic mode
+uses smooth, repeatable variation in global XY coordinates so transitions wander
+across hills without tile seams. Cutoffs stay horizontal for print efficiency.
+Changing a look or style regenerates an existing model using cached elevation.
+
+Individual colors, thresholds and print settings are under **Advanced color
+settings**. Enable **Use my own colors & heights** for full manual control.
 
 * **Realistic** uses elevation and a configurable rock slope. OSM and ocean face
   colors take precedence. These are artistic colors rather than measured land cover.
 * **Layer cutoffs** makes separate closed horizontal material volumes, with
   boundaries rounded to your print layer height. All tiles share the same cutoffs.
   This replaces OSM/ocean face colors and generally reduces changes per layer.
-* **Gradient** interpolates the five stops into 4, 8 or 16 discrete materials.
+* **Gradient** interpolates the five stops into 4 (default), 8 or 16 discrete materials.
   More colors may mean more swaps and purge waste. Combine materials in the slicer
   to match your AMS slots or tool count.
 

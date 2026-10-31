@@ -1,4 +1,4 @@
-import { TERRAIN_STOPS, validateTerrainColors } from './terrain-colors.js';
+import { TERRAIN_STOPS, TERRAIN_LOOKS, proceduralTerrainColors, validateTerrainColors } from './terrain-colors.js';
 import './style.css';
 import L from 'leaflet';
 import { zipSync, strToU8 } from 'fflate';
@@ -13,8 +13,10 @@ import { request } from './network.js';
 import { parseTrack, trackPolygons } from './tracks.js';
 const $=id=>document.getElementById(id),num=id=>Number($(id).value),checked=id=>$(id).checked;
 TERRAIN_STOPS.forEach((p,i)=>{const row=document.createElement('div');row.className='terrain-color-row';const label=document.createElement('label');label.textContent=p.name;const color=document.createElement('input');color.type='color';color.id='terrain-color-'+i;color.value=p.color;color.setAttribute('aria-label',p.name+' color');label.prepend(color);row.append(label);const at=document.createElement('input');at.type='number';at.id='terrain-at-'+i;at.value=p.at;at.min=0;at.max=99;at.step=1;at.readOnly=i===0;at.setAttribute('aria-label',p.name+' start percent');row.append(at,document.createTextNode('%'));$('terrain-color-stops').append(row);});
-function colorModeChanged(){const mode=$('terrain-color-mode').value;$('terrain-color-controls').hidden=mode==='off';$('color-cutoff-options').hidden=mode!=='cutoffs';$('color-gradient-options').hidden=mode!=='gradient';$('color-realistic-options').hidden=mode!=='realistic';}
-$('terrain-color-mode').addEventListener('change',colorModeChanged);colorModeChanged();
+Object.entries(TERRAIN_LOOKS).forEach(([key,look])=>{const option=document.createElement('option');option.value=key;option.textContent=look.name;$('terrain-color-look').append(option);});
+function colorModeChanged(){const mode=$('terrain-color-mode').value;$('terrain-color-controls').hidden=mode==='off';$('color-cutoff-options').hidden=mode!=='cutoffs';$('color-gradient-options').hidden=mode!=='gradient';$('color-realistic-options').hidden=mode!=='realistic';$('terrain-custom-controls').hidden=!checked('terrain-custom-colors');const look=TERRAIN_LOOKS[$('terrain-color-look').value];$('terrain-palette-preview').replaceChildren();for(const color of checked('terrain-custom-colors')?TERRAIN_STOPS.map((_,i)=>$('terrain-color-'+i).value):look.colors){const swatch=document.createElement('i');swatch.style.background=color;$('terrain-palette-preview').append(swatch);}$('terrain-color-help').textContent=mode==='cutoffs'?'Automatic height bands for fewer changes per print layer.':'Colors adapt to the terrain. Realistic mode adds natural variation and exposed rock.';}
+for(const id of ['terrain-color-mode','terrain-color-look','terrain-custom-colors'])$(id).addEventListener('change',()=>{colorModeChanged();regenerateTerrain();});
+$('terrain-color-advanced').addEventListener('change',()=>{colorModeChanged();regenerateTerrain();});colorModeChanged();
 const presets={santamaria:{south:36.91,north:37.07,west:-25.25,east:-25.00},lapalma:{south:28.43,north:28.88,west:-18.03,east:-17.70},rainier:{south:46.805,north:46.895,west:-121.825,east:-121.68},snowdon:{south:53.052,north:53.078,west:-4.105,east:-4.06},tokyo:{south:35.674,north:35.693,west:139.747,east:139.778},kyoto:{south:35.048,north:35.082,west:135.744,east:135.785}};
 let trackFile=null,elevationCache=null;
 let mode='terrain',model=null,pool=null,controller=null,running=false,osmCache=null,osmFile=null,imageFile=null,demFile=null,view='split',drawStart=null,drawing=false,searchController=null;
@@ -30,7 +32,7 @@ function bounds(){return {south:num('south'),north:num('north'),west:num('west')
 function settings(){
   const b=mode==='image'?presets.lapalma:validateBounds(bounds()),width=num('model-width'),d=mode==='image'&&imageFile?{width,height:width*imageFile.height/imageFile.width,scale:1}:dimensions(b,width);
   const s={...d,width,base:num('base'),relief:num('relief'),rows:num('rows'),cols:num('cols'),spacing:num('spacing'),multiColor:checked('multi-color'),layers:Object.fromEntries([...document.querySelectorAll('[data-layer]')].map(e=>[e.dataset.layer,e.checked])),buildingHeight:num('building-height'),roadHeight:num('road-height'),greenHeight:num('green-height'),waterHeight:num('water-height'),roadWidth:num('road-width'),trueScale:checked('true-scale'),buildingScale:num('building-scale'),terrainMode:$('terrain-mode').value,terrainScale:$('terrain-scale').value,contourInterval:num('contour-interval'),exaggeration:num('exaggeration'),smooth:num('smooth'),flattenOcean:mode!=='image'&&checked('flatten-ocean')};
-  s.colorMode=$('terrain-color-mode').value;s.colorStops=TERRAIN_STOPS.map((p,i)=>({...p,color:$('terrain-color-'+i).value,at:i?num('terrain-at-'+i):0}));s.colorLayerHeight=num('color-layer-height');s.colorSteps=num('color-steps');s.rockSlope=num('rock-slope');validateTerrainColors(s);
+  s.colorMode=$('terrain-color-mode').value;s.colorAutomatic=!checked('terrain-custom-colors');s.colorLook=$('terrain-color-look').value;s.colorStops=s.colorAutomatic?TERRAIN_STOPS.map(p=>({...p})):TERRAIN_STOPS.map((p,i)=>({...p,color:$('terrain-color-'+i).value,at:i?num('terrain-at-'+i):0}));s.colorLayerHeight=num('color-layer-height');s.colorSteps=num('color-steps');s.rockSlope=num('rock-slope');validateTerrainColors(s);
   if(mode==='image'){s.terrainScale='relief';s.terrainMode='smooth';}
   if(!(s.width>=10&&s.width<=2000&&s.height>0&&s.height<=2000&&s.base>=.4&&s.relief>0&&s.rows>=1&&s.cols>=1&&s.rows<=10&&s.cols<=10&&Number.isInteger(s.rows)&&Number.isInteger(s.cols)))throw new Error('Check model dimensions, base, relief and tile counts.');
   s.trackWidth=num('track-width');s.trackClearance=num('track-clearance');s.trackFloor=2.5;s.trackThickness=1.5;
@@ -78,7 +80,7 @@ async function generate(){
   if(drawing)finishDrawing(true);
   $('error').hidden=true;let start=performance.now();controller=new AbortController();
   try {
-    const s=settings(),b=bounds(),hasTerrain=mode==='terrain'||(mode==='osm'&&checked('with-terrain'))||mode==='image';
+    let s=settings();const b=bounds(),hasTerrain=mode==='terrain'||(mode==='osm'&&checked('with-terrain'))||mode==='image';
     if(trackFile&&mode==='osm'&&!hasTerrain)throw new Error('Enable Use terrain for a GPS track insert.');
     if(mode==='image'&&!imageFile)throw new Error('Choose a heightmap first.');
     const grid=gridSize(s.width,s.height,s.spacing,s.rows,s.cols),count=workerCount(s.rows*s.cols,num('workers'));
@@ -100,11 +102,12 @@ async function generate(){
       report('Building terrain surface',35);surface=await pool.run('surface',{elevation,features,settings:s});
     }
     if(surface){s.colorMaxZ=s.base;for(const z of surface.heights)s.colorMaxZ=Math.max(s.colorMaxZ,z);s.colorZToXY=s.terrainScale==='true'?s.exaggeration:s.relief/Math.max(.001,elevation.max-elevation.min)*s.exaggeration/(s.scale||1);}
+    if(surface)s=proceduralTerrainColors(s,surface,elevation);
     const track=trackFile&&mode!=='image'?trackPolygons(trackFile,b,s):null;
     if(track){report('Preparing track recess',38);s.trackFloor=await pool.run('trackFloor',{surface,polygons:track,settings:s});}
     let done=0;const tiles=await Promise.all(Array.from({length:s.rows*s.cols},(_,i)=>{
       const row=Math.floor(i/s.cols),col=i%s.cols,tile=tileBounds(row,col,s.rows,s.cols,s.width,s.height);
-      return pool.run('tile',{tile,features,surface,settings:s,track}).then(async objects=>{if(surface)objects=await pool.run('color',{objects,settings:s});report(`Tiles · ${++done}/${s.rows*s.cols} · ${count} workers`,40+done/(s.rows*s.cols)*55);return {tile,objects};});
+      return pool.run('tile',{tile,features,surface,settings:s,track}).then(async objects=>{if(surface)objects=await pool.run('color',{objects,settings:s,origin:[tile.x,tile.y]});report(`Tiles · ${++done}/${s.rows*s.cols} · ${count} workers`,40+done/(s.rows*s.cols)*55);return {tile,objects};});
     }));
     controller.signal.throwIfAborted();
     const seconds=(performance.now()-start)/1000;
@@ -116,7 +119,7 @@ async function generate(){
   finally{pool?.close();pool=null;setBusy(false);}
 }
 function modelObjects(){return model.tiles.flatMap(t=>t.objects.map(o=>({...o,offset:[t.tile.x,t.tile.y,0],name:`R${t.tile.row+1}C${t.tile.col+1} · ${o.name||o.group}`})));}
-function metadata(){return {Title:model.name,Application:'ODTT',Description:model.elevation?.detail||'OpenStreetMap',Copyright:attribution(model),TerrainColors:JSON.stringify({mode:model.settings.colorMode,stops:model.settings.colorStops,layerHeight:model.settings.colorLayerHeight}),Modification:'Clipped, resampled, scaled and converted to a printable mesh.'};}
+function metadata(){return {Title:model.name,Application:'ODTT',Description:model.elevation?.detail||'OpenStreetMap',Copyright:attribution(model),TerrainColors:JSON.stringify({mode:model.settings.colorMode,automatic:model.settings.colorAutomatic,look:model.settings.colorLook,stops:model.settings.colorStops,layerHeight:model.settings.colorLayerHeight}),Modification:'Clipped, resampled, scaled and converted to a printable mesh.'};}
 async function exportModel(kind){
   if(!model||running)return;$('error').hidden=true;pool=new ModelPool(workerCount(5,num('workers')));setBusy(true);report('Preparing download',0);
   const filename=model.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'model';

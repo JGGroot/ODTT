@@ -20,11 +20,16 @@
   </div></section>
   <section id="terrain-colors-section"><h2>Terrain colors</h2>
   <label class="field">Color style<select id="terrain-color-mode"><option value="off">Original terrain color</option><option value="realistic" selected>Realistic · elevation &amp; slope</option><option value="cutoffs">Layer cutoffs · fewer tool changes</option><option value="gradient">Gradient · stepped color blend</option></select></label>
-  <div id="terrain-color-controls"><div class="hint">Set colors and starting heights as a percentage of the whole model’s relief. Generate again to apply.</div><div id="terrain-color-stops"></div>
-  <div id="color-realistic-options"><label class="field">Rock slope <span class="unit">degrees</span><input id="rock-slope" type="number" value="38" min="1" max="89"></label><div class="hint">Steep faces expose rock. Artistic elevation colors, not surveyed land cover.</div></div>
-  <div id="color-cutoff-options" hidden><label class="field">Print layer height <span class="unit">mm</span><input id="color-layer-height" type="number" value="0.2" min="0.05" max="1" step="0.01"></label><div class="hint">Horizontal material volumes snap to print layers. Assign filaments in your slicer. Replaces OSM surface colors to reduce changes per layer.</div></div>
-  <div id="color-gradient-options" hidden><label class="field">Gradient materials<select id="color-steps"><option>4</option><option selected>8</option><option>16</option></select></label><div class="hint">A finite color blend for 3MF. More materials can increase AMS swaps and purge waste; assign or combine colors in your slicer.</div></div>
-  <div class="hint">3MF retains colors; STL contains geometry only. Slicer support for face materials varies. Cutoff mode exports separate closed volumes.</div></div></section>
+  <div id="terrain-color-controls">
+  <label class="field">Landscape look<select id="terrain-color-look"></select></label><div id="terrain-palette-preview" aria-hidden="true"></div>
+  <div id="terrain-color-help" class="hint"></div>
+  <details id="terrain-color-advanced"><summary>Advanced color settings</summary>
+  <label class="check"><input id="terrain-custom-colors" type="checkbox">Use my own colors &amp; heights</label>
+  <div id="terrain-custom-controls" hidden><div class="hint">Starting heights are percentages of the whole model’s relief.</div><div id="terrain-color-stops"></div></div>
+  <div id="color-realistic-options"><label class="field">Rock slope <span class="unit">degrees</span><input id="rock-slope" type="number" value="38" min="1" max="89"></label></div>
+  <div id="color-cutoff-options" hidden><label class="field">Print layer height <span class="unit">mm</span><input id="color-layer-height" type="number" value="0.2" min="0.05" max="1" step="0.01"></label><div class="hint">Horizontal volumes snap to print layers. This mode replaces OSM surface colors.</div></div>
+  <div id="color-gradient-options" hidden><label class="field">Gradient materials<select id="color-steps"><option selected>4</option><option>8</option><option>16</option></select></label><div class="hint">More materials can increase swaps and purge waste.</div></div>
+  </details><div class="hint">3MF keeps colors for filament assignment in your slicer. Colors suggest a landscape; they are not measured land cover.</div></div></section>
   <section><h2>Model <span id="model-ratio"></span></h2><div class="two"><label>Width <span class="unit">mm</span><input id="model-width" type="number" value="240" min="10" max="2000" step="10"></label><label>Base <span class="unit">mm</span><input id="base" type="number" value="2" min="0.4" max="50" step="0.2"></label></div><div class="two"><label>Relief <span class="unit">mm</span><input id="relief" type="number" value="16" min="0.1" max="200" step="1"></label><label>Sample spacing <span class="unit">mm</span><select id="spacing"><option value="0.6">0.6 · Draft</option><option value="0.35" selected>0.35 · Standard</option><option value="0.2">0.2 · Fine</option><option value="0.12">0.12 · Extra fine</option></select></label></div>
   <div class="two"><label>Columns<input id="cols" type="number" value="2" min="1" max="10"></label><label>Rows<input id="rows" type="number" value="2" min="1" max="10"></label></div><div class="model-summary"><span id="tile-size"></span><span id="tile-count"></span></div>
   </section>
