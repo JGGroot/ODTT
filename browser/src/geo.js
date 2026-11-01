@@ -31,14 +31,22 @@ export function tileBounds(row, col, rows, cols, width, height) {
   const w = width/cols, h = height/rows;
   return { x: col*w, y: (rows-1-row)*h, width:w, height:h, row, col };
 }
-export function gridSize(width, height, spacing, rows, cols) {
+export function gridSize(width, height, spacing, rows, cols, widthM = 0, heightM = 0) {
   if (width <= 0 || height <= 0 || spacing <= 0 || rows < 1 || cols < 1) throw new Error('Model dimensions must be positive.');
-  let nx = Math.ceil(width / spacing / cols) * cols;
-  let ny = Math.ceil(height / spacing / rows) * rows;
-  const maxCells = 900000;
-  const factor = Math.max(1, Math.sqrt(nx*ny/maxCells));
-  nx = Math.max(cols, Math.floor(nx/factor/cols)*cols);
-  ny = Math.max(rows, Math.floor(ny/factor/rows)*rows);
+  const align = (n, parts) => Math.max(parts, Math.ceil(n / parts) * parts);
+  let nx = align(width / spacing, cols);
+  let ny = align(height / spacing, rows);
+  // Print spacing alone is about 200 m on a whole island, which facets ridges.
+  // Tighten toward the elevation source, then stop at the memory budget.
+  if (widthM > 0 && heightM > 0) {
+    const ground = spacing >= 0.6 ? 140 : spacing >= 0.35 ? 40 : spacing >= 0.2 ? 22 : 12;
+    nx = Math.max(nx, align(widthM / ground, cols));
+    ny = Math.max(ny, align(heightM / ground, rows));
+  }
+  const maxCells = 8000000;
+  const factor = Math.max(1, Math.sqrt(nx * ny / maxCells));
+  nx = Math.max(cols, Math.floor(nx / factor / cols) * cols);
+  ny = Math.max(rows, Math.floor(ny / factor / rows) * rows);
   return { w:nx+1, h:ny+1, spacing:Math.max(width/nx,height/ny) };
 }
 export function bilinear(data, w, h, x, y) {

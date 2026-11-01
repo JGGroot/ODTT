@@ -17,12 +17,23 @@ test('cutoff volumes are closed, layer aligned, and preserve total volume',()=>{
  const xml=strFromU8(unzipSync(threeMF(parts))['3D/3dmodel.model']);for(const p of parts)assert.ok(xml.includes(p.color+'FF'));
 });
 test('collapsed cutoffs omit empty slabs and preserve a flat model',()=>{const flat={...heightMesh(new Float32Array(4).fill(2),2,2,20,20),group:'terrain'};const parts=splitTerrainColors(wasm,[flat],{...s,colorMaxZ:2});assert.equal(parts.length,1);assert.ok(Math.abs(meshVolume(parts[0])-800)<.00001);});
+test('flatten ocean creates a blue ocean layer in cutoffs mode',()=>{
+ const oceanSettings={...s,flattenOcean:true,hasOcean:true,colorWater:'#2f6f9f'};
+ const parts=splitTerrainColors(wasm,[mesh],oceanSettings);
+ assert.equal(parts.length,6);
+ assert.equal(parts[0].name,'Ocean');
+ assert.equal(parts[0].color,'#2f6f9f');
+ assert.ok(Math.abs(parts.reduce((v,p)=>v+meshVolume(p),0)-meshVolume(mesh))<.01);
+ const xml=strFromU8(unzipSync(threeMF(parts))['3D/3dmodel.model']);
+ assert.match(xml,/name="Ocean"/);
+ assert.match(xml,/displaycolor="#2f6f9fFF"/);
+});
 test('realistic and gradient materials survive 3MF with feature precedence',()=>{
  for(const colorMode of ['realistic','gradient']){
-  const labels=new Uint8Array(4).fill(1),[painted]=paintTerrain([{...mesh,labels}],{...s,colorMode,colorZToXY:1});
+  const labels=new Uint8Array(4).fill(1),[painted]=paintTerrain([{...mesh,labels}],{...s,colorMode,colorZToXY:1,colorWater:'#2f6f9f'});
   assert.equal(painted.faceMaterials.length,mesh.indices.length/3);
-  assert.ok(painted.materials.some(m=>m.feature==='water'));
-  const xml=strFromU8(unzipSync(threeMF([painted]))['3D/3dmodel.model']);assert.match(xml,/name="water"/);assert.doesNotMatch(xml,/p1="(?:-1|undefined)"/);
+  assert.ok(painted.materials.some(m=>m.feature==='water'&&m.color==='#2f6f9f'));
+  const xml=strFromU8(unzipSync(threeMF([painted]))['3D/3dmodel.model']);assert.match(xml,/name="water"/);assert.match(xml,/displaycolor="#2f6f9fFF"/);assert.doesNotMatch(xml,/p1="(?:-1|undefined)"/);
  }
  assert.equal(terrainPalette({...s,colorMode:'gradient',colorSteps:4}).length,4);
 });

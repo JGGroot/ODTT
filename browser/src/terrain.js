@@ -18,6 +18,8 @@ const eaURL='https://environment.data.gov.uk/spatialdata/lidar-composite-digital
 const usgsURL='https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage';
 export function autoSource(b) {
   const lat=(b.north+b.south)/2,lon=(b.east+b.west)/2;
+  // Environment Agency LiDAR covers England; Wales and Scotland are outside coverage.
+  if(lat>51.3&&lat<53.5&&lon<-2.7)return 'mapzen';
   if(lat>49.85&&lat<55.85&&lon>-6.5&&lon<2)return 'ea';
   if(lat>24&&lat<46&&lon>122&&lon<146)return 'gsi1';
   if((lat>24&&lat<50&&lon>-126&&lon<-66)||(lat>51&&lat<72&&lon>-170&&lon<-130)||(lat>18&&lat<23&&lon>-161&&lon<-154))return 'usgs';
@@ -43,12 +45,23 @@ export async function tiffGrid(buffer,b,w,h,signal) {
   const corners=[[b.west,b.south],[b.east,b.south],[b.west,b.north],[b.east,b.north]].map(p=>proj4('EPSG:4326',crs,p));
   const crop=[Math.max(box[0],Math.min(...corners.map(p=>p[0]))),Math.max(box[1],Math.min(...corners.map(p=>p[1]))),Math.min(box[2],Math.max(...corners.map(p=>p[0]))),Math.min(box[3],Math.max(...corners.map(p=>p[1])))];
   if(crop[0]>=crop[2]||crop[1]>=crop[3])throw new Error('Selected area is outside the GeoTIFF.');
-  const rw=Math.min(4096,Math.max(w+4,64)),rh=Math.min(4096,Math.max(h+4,64));
-  // Preserve no-data sentinels during coarse reads; interpolate only after
-  // masking them, so gaps cannot turn into extreme artificial elevations.
-  const rasters=await tiff.readRasters({bbox:crop,width:rw,height:rh,samples:[0],resampleMethod:'nearest'}),data=Float32Array.from(rasters[0]);
+  // Resampling inside the GeoTIFF reader turns the float no-data sentinel
+  // into 0, which made uncovered areas such as Snowdon look like valid sea
+  // level and skipped the Mapzen fallback. Read the source pixels, mask
+  // sentinels, then interpolate.
+  let rasters=await image.readRasters({bbox:crop,samples:[0]});
+  let rw=rasters.width,rh=rasters.height,data=Float32Array.from(rasters[0]);
   const nodata=image.getGDALNoData();
-  for(let i=0;i<data.length;i++)if(!Number.isFinite(data[i])||data[i]===nodata||Math.abs(data[i])>20000)data[i]=NaN;
+  for(let i=0;i<data.length;i++)if(!Number.isFinite(data[i])||(nodata!=null&&data[i]===Number(nodata))||Math.abs(data[i])>20000)data[i]=NaN;
+  const limit=4096;
+  if(rw>limit||rh>limit){
+    const factor=Math.max(rw/limit,rh/limit),nw=Math.max(1,Math.round(rw/factor)),nh=Math.max(1,Math.round(rh/factor)),next=new Float32Array(nw*nh);
+    for(let y=0;y<nh;y++)for(let x=0;x<nw;x++){
+      const cx=Math.min(rw-1,Math.floor((x+.5)*rw/nw)),cy=Math.min(rh-1,Math.floor((y+.5)*rh/nh));
+      next[y*nw+x]=data[cy*rw+cx];
+    }
+    data=next;rw=nw;rh=nh;
+  }
   const out=new Float32Array(w*h);
   for(let row=0;row<h;row++)for(let col=0;col<w;col++) {
     const lon=b.west+col/(w-1)*(b.east-b.west),lat=b.north-row/(h-1)*(b.north-b.south),p=proj4('EPSG:4326',crs,[lon,lat]);
@@ -73,7 +86,7 @@ async function tileGrid(id,b,w,h,signal,report,zoomLimit=Infinity) {
   while(z>=0) {
     first=worldPixel(b.west,b.north,z);last=worldPixel(b.east,b.south,z);
     keys=[];for(let y=Math.floor(first[1]/256);y<=Math.floor(last[1]/256);y++)for(let x=Math.floor(first[0]/256);x<=Math.floor(last[0]/256);x++)keys.push([x,y]);
-    if(keys.length<=64)break;z--;
+    if(keys.length<=1024)break;z--;
   }
   // Avoid downloading details finer than the model's requested sample grid.
   while(z>0&&(last[0]-first[0])>w*2&&(last[1]-first[1])>h*2){z--;first=worldPixel(b.west,b.north,z);last=worldPixel(b.east,b.south,z);}
@@ -173,6 +186,7 @@ export async function fetchTerrain(source,b,w,h,signal,report=()=>{},file,option
       if(bytes.byteLength>100000000)throw new Error('Elevation response is too large. Select a smaller area.');
       result={grid:await tiffGrid(bytes,b,w,h,signal),detail:SOURCES.find(s=>s.id===chosen).detail};
     }
+    if(result.grid.every(v=>!Number.isFinite(v)))throw new Error('No elevation data covers this area.');
     if(options.flattenOcean&&!['mapzen','srtm'].includes(chosen)&&result.grid.some(v=>!Number.isFinite(v))) {
       report('Checking sea-level coverage');
       const reference=await tileGrid('mapzen',b,w,h,signal,report);
@@ -181,5 +195,5 @@ export async function fetchTerrain(source,b,w,h,signal,report=()=>{},file,option
     }
     const stats=fillVoids(result.grid,w,h);
     return {...result,...stats,source:chosen,w,h,sampleM:Math.max(dimensions(b).widthM/(w-1),dimensions(b).heightM/(h-1))};
-  }catch(e){if(signal?.aborted)throw e;if(source==='auto'&&chosen==='gsi1'){report('GSI 1 m unavailable · using GSI 5 m');try{return await fetchTerrain('gsi5',b,w,h,signal,report,file,options);}catch(e){if(signal?.aborted)throw e;}}if(source==='auto'&&chosen!=='mapzen'){report(`${SOURCES.find(s=>s.id===chosen).name} unavailable · using Mapzen`);return fetchTerrain('mapzen',b,w,h,signal,report,file,options);}throw e;}
+  }catch(e){if(signal?.aborted)throw e;if(source==='auto'&&chosen==='gsi1'){report('GSI 1 m unavailable · using GSI 5 m');try{return await fetchTerrain('gsi5',b,w,h,signal,report,file,options);}catch(e){if(signal?.aborted)throw e;}}if(source==='auto'&&chosen!=='mapzen'){report(`${SOURCES.find(s=>s.id===chosen)?.name||chosen} unavailable · using Mapzen`);return fetchTerrain('mapzen',b,w,h,signal,report,file,options);}throw e;}
 }

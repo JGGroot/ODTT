@@ -38,6 +38,37 @@ export function parseOSM(text){
     return out;
   });return {elements};
 }
+export async function fetchWater(bounds, signal, report=()=>{}) {
+  const cached=await waterStorage(bounds);if(cached){report('Using cached water');return cached;}
+  const b=`${bounds.south},${bounds.west},${bounds.north},${bounds.east}`;
+  const q=`[out:json][timeout:55];(way["natural"="water"]["water"!="ocean"]["water"!="sea"](${b});relation["natural"="water"]["water"!="ocean"]["water"!="sea"](${b});way["landuse"="reservoir"](${b});relation["landuse"="reservoir"](${b});way["waterway"="riverbank"](${b});relation["waterway"="riverbank"](${b}););out body geom;`;
+  const isSmall=(bounds.north-bounds.south)*(bounds.east-bounds.west)<=.01;
+  const errors=[];
+  for(let i=0;i<endpoints.length;i++) {
+    signal?.throwIfAborted();report(`Fetching lakes · ${i+1}/${endpoints.length}`);
+    try {
+      const r=await request(endpoints[i],{method:'POST',headers:{Accept:'application/json'},body:new URLSearchParams({data:q}),signal,timeout:35000});
+      const data=await r.json();
+      if(data.remark)throw new Error(data.remark);
+      if(!Array.isArray(data.elements))throw new Error('Water response is incomplete.');
+      await waterStorage(bounds,data);return data;
+    } catch(e) {
+      if(signal?.aborted)throw e;
+      errors.push(e.message);
+      if(isSmall){
+        report('Fetching lakes · small-area fallback');
+        try{const data=await fetchMapXML(bounds,signal);await waterStorage(bounds,data);return data;}catch(err){if(signal?.aborted)throw err;errors.push(err.message);}
+      }
+      if(i<endpoints.length-1&&[406,429].includes(e.status)){report('Water service busy · retry in 10 s');await pause(10000,signal);}
+    }
+  }
+  if(isSmall){
+    report('Fetching lakes · small-area fallback');
+    try{const data=await fetchMapXML(bounds,signal);await waterStorage(bounds,data);return data;}catch(e){if(signal?.aborted)throw e;errors.push(e.message);}
+  }
+  throw new Error(`Lakes unavailable. ${errors.join(' ')}`);
+}
+async function waterStorage(b,data){try{const cache=await caches.open('oddt-water-v1'),key=new URL('./cache/water?'+new URLSearchParams(b),location.href).href;if(data){await cache.put(key,new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json','X-ODDT-Cached':String(Date.now())}}));return data;}const hit=await cache.match(key);if(hit&&Date.now()-Number(hit.headers.get('X-ODDT-Cached'))<86400000)return hit.json();}catch{}return null;}
 export async function fetchMapXML(b,signal){
   if((b.north-b.south)*(b.east-b.west)>.01)throw new Error('Small-area OSM downloads require a smaller selection. Use Overpass or import a file.');
   const cached=await osmStorage(b);if(cached)return cached;
@@ -117,7 +148,7 @@ export function osmFeatures(data,bounds,settings) {
     if(consumed.has(e.id))continue;const tags=e.tags||{},group=classify(tags);if(!group)continue;
     const g=wayGeometry(e);if(g.length<2)continue;
     const closed=g.length>=4&&same(g[0],g.at(-1));
-    const area=closed&&(group==='buildings'||group==='greenery'||tags.area==='yes'||tags.natural==='water'||['apron','helipad'].includes(tags.aeroway));
+    const area=closed&&(group==='buildings'||group==='greenery'||tags.area==='yes'||tags.natural==='water'||tags.landuse==='reservoir'||tags.waterway==='riverbank'||['apron','helipad'].includes(tags.aeroway));
     add(tags,{type:area?'Polygon':'LineString',coordinates:area?[g]:g},e.id);
   }
   return features;

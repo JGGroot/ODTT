@@ -8,11 +8,11 @@ export const TERRAIN_STOPS=[
   {name:'Snow',color:'#f1f4f5',at:88}
 ];
 export const TERRAIN_LOOKS={
-  natural:{name:'Natural',colors:['#35633d','#809a48','#98704c','#868a8d','#f1f4f5']},
-  alpine:{name:'Alpine',colors:['#365b42','#83905b','#a08a6b','#858b90','#f4f6f6']},
-  lush:{name:'Lush',colors:['#254c37','#517a42','#8b985d','#817968','#a8aaa0']},
-  desert:{name:'Desert',colors:['#9b7747','#c8aa68','#b67c50','#8c7565','#dfc8a0']},
-  volcanic:{name:'Volcanic',colors:['#3c5940','#657847','#756356','#56575b','#a2a0a0']}
+  natural:{name:'Natural',water:'#2f6f9f',colors:['#35633d','#809a48','#98704c','#868a8d','#f1f4f5']},
+  alpine:{name:'Alpine',water:'#3d7ea6',colors:['#365b42','#83905b','#a08a6b','#858b90','#f4f6f6']},
+  lush:{name:'Lush',water:'#2a7594',colors:['#254c37','#517a42','#8b985d','#817968','#a8aaa0']},
+  desert:{name:'Desert',water:'#4e8f9a',colors:['#9b7747','#c8aa68','#b67c50','#8c7565','#dfc8a0']},
+  volcanic:{name:'Volcanic',water:'#3a6d78',colors:['#3c5940','#657847','#756356','#56575b','#a2a0a0']}
 };
 // Resolve once from the entire land surface, before tiling. Quantiles prevent a
 // tiny high peak or a large flat ocean from crowding all colors into one band.
@@ -56,6 +56,7 @@ export function validateTerrainColors(s) {
   if(!['off','realistic','cutoffs','gradient'].includes(s.colorMode))throw new Error('Choose a terrain color mode.');
   const stops=s.colorStops;
   if(!Array.isArray(stops)||stops.length!==5||stops[0].at!==0||stops.some((p,i)=>!/^#[\da-f]{6}$/i.test(p.color)||!Number.isFinite(p.at)||p.at<0||p.at>=100||(i&&p.at<=stops[i-1].at)))throw new Error('Color heights must increase from 0 to below 100% of relief.');
+  if(s.colorWater&&!/^#[\da-f]{6}$/i.test(s.colorWater))throw new Error('Check water color.');
   if(s.rockSlope!==undefined&&!(s.rockSlope>=1&&s.rockSlope<=89))throw new Error('Rock slope must be between 1 and 89 degrees.');
   if(s.colorSteps!==undefined&&![4,8,16].includes(s.colorSteps))throw new Error('Choose 4, 8 or 16 gradient materials.');
   if(!(s.colorLayerHeight>=.05&&s.colorLayerHeight<=1))throw new Error('Print layer height must be between 0.05 and 1 mm.');
@@ -73,7 +74,12 @@ export function terrainPalette(s) {
 }
 export function cutoffHeights(s) {
   const span=Math.max(0,(s.colorMaxZ??s.base)-s.base),layer=s.colorLayerHeight||.2;
-  return terrainPalette(s).map((p,i)=>i?Math.max(layer,Math.round((s.base+span*p.at/100)/layer)*layer):0);
+  const baseCut=s.hasOcean&&s.flattenOcean?Math.max(layer,Math.round(s.base/layer)*layer):0;
+  return terrainPalette(s).map((p,i)=>{
+    if(!i)return baseCut;
+    const raw=s.base+span*p.at/100;
+    return Math.max(baseCut+layer*i,Math.round(raw/layer)*layer);
+  });
 }
 export function paintTerrain(objects,s,origin=[0,0]) {
   if(!s.colorMode||s.colorMode==='off'||s.colorMode==='cutoffs')return objects;
@@ -101,7 +107,7 @@ export function paintTerrain(objects,s,origin=[0,0]) {
         if(nz>0&&slope>=(s.rockSlope||38))code=3;
       }
       const labels=ids.map(i=>o.labels?.[i]||0),label=labels[1]===labels[2]?labels[1]:labels[0];
-      if(label){if(!featureIndex.has(label)){featureIndex.set(label,materials.length);materials.push({name:FEATURE_NAMES[label],feature:FEATURE_NAMES[label]});}code=featureIndex.get(label);}
+      if(label){if(!featureIndex.has(label)){const material={name:FEATURE_NAMES[label],feature:FEATURE_NAMES[label]};if(label===1)material.color=s.colorWater||'#2f6f9f';featureIndex.set(label,materials.length);materials.push(material);}code=featureIndex.get(label);}
       faceMaterials[j/3]=code;
     }
     return {...o,materials,faceMaterials};

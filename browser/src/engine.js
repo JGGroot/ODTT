@@ -42,6 +42,7 @@ export function surfaceHeights(elevation,features,settings) {
   const {grid,w,h}=elevation;
   const heights=new Float32Array(grid.length),labels=new Uint8Array(grid.length);
   const ocean=settings.flattenOcean?Uint8Array.from(grid,v=>v<=0):null;
+  const hasOcean=Boolean(ocean&&ocean.some(Boolean));
   // The base is only the slab under the lowest land sample. Exaggeration scales
   // relief above that sample. Flattened ocean sits on the same base; it is not
   // the vertical zero, or a coastline would lift every valley by its altitude.
@@ -73,11 +74,11 @@ export function surfaceHeights(elevation,features,settings) {
       const y0=Math.max(0,Math.floor((1-f.bounds[3]/settings.height)*(h-1))),y1=Math.min(h-1,Math.ceil((1-f.bounds[1]/settings.height)*(h-1)));
       for(let row=y0;row<=y1;row++)for(let col=x0;col<=x1;col++){
         const x=col/(w-1)*settings.width,y=(1-row/(h-1))*settings.height;
-        if(f.polygons.some(p=>pointInPolygon(x,y,p))){const i=row*w+col;heights[i]=baseSurface[i]+f.height;labels[i]=codes[f.group];}
+        if(f.polygons.some(p=>pointInPolygon(x,y,p))){const i=row*w+col;if(!f.colorOnly)heights[i]=baseSurface[i]+f.height;labels[i]=codes[f.group];}
       }
     }
   }
-  return {heights,labels,w,h};
+  return {heights,labels,w,h,hasOcean};
 }
 export function surfaceTile(surface,tile,settings) {
   const nx=(surface.w-1)/settings.cols,ny=(surface.h-1)/settings.rows;
@@ -126,12 +127,21 @@ export function trackInsert(wasm,objects,polygons,tile,settings) {
 export function splitTerrainColors(wasm,objects,settings) {
   if(settings.colorMode!=='cutoffs')return objects;
   const palette=terrainPalette(settings),cuts=cutoffHeights(settings),result=[];
+  const layer=settings.colorLayerHeight||.2;
+  const baseCut=settings.hasOcean&&settings.flattenOcean?Math.max(layer,Math.round(settings.base/layer)*layer):0;
   for(const o of objects){
     if(o.group!=='terrain'){result.push(o);continue;}
     const owned=[],own=v=>(owned.push(v),v);
     try {
       const solid=own(toNative(wasm,o));let maxZ=0,maxX=0,maxY=0;
       for(let i=0;i<o.vertices.length;i+=3){maxX=Math.max(maxX,o.vertices[i]);maxY=Math.max(maxY,o.vertices[i+1]);maxZ=Math.max(maxZ,o.vertices[i+2]);}
+      if(baseCut>0){
+        const oceanBox=own(own(wasm.Manifold.cube([maxX+2,maxY+2,baseCut])).translate([-1,-1,0]));
+        const oceanPart=own(solid.intersect(oceanBox));
+        if(!oceanPart.isEmpty()){
+          result.push({...toPlain(oceanPart),group:'terrain',name:'Ocean',color:settings.colorWater||'#2f6f9f',offset:o.offset});
+        }
+      }
       for(let i=0;i<palette.length;i++){
         const bottom=cuts[i],top=i===palette.length-1?maxZ+1:cuts[i+1];
         if(top<=bottom||bottom>=maxZ)continue;

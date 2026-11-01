@@ -17,8 +17,9 @@ export class Preview {
     this.clear(this.group);this.clear(this.overlays);this.settings=settings;
     for(const tile of tiles)for(const o of tile.objects){
       let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(o.vertices,3));g.setIndex(new THREE.BufferAttribute(o.indices,1));g.computeVertexNormals();
-      const material=new THREE.MeshStandardMaterial({color:o.color||COLORS[o.group]||COLORS.terrain,roughness:.78,metalness:0,flatShading:Boolean(o.color),wireframe:this.wire});
-      if(o.labels&&!o.faceMaterials){const colors=new Float32Array(o.vertices.length),names=['terrain','water','greenery','roads','runways','railways','buildings'];for(let i=0;i<o.vertices.length/3;i++){const c=new THREE.Color(COLORS[names[o.labels[i]||0]]);colors.set([c.r,c.g,c.b],i*3);}g.setAttribute('color',new THREE.BufferAttribute(colors,3));material.vertexColors=true;material.color.set(0xffffff);}
+      const flatShading=o.group!=='terrain'&&Boolean(o.color);
+      const material=new THREE.MeshStandardMaterial({color:o.color||COLORS[o.group]||COLORS.terrain,roughness:.78,metalness:0,flatShading,wireframe:this.wire});
+      if(o.labels&&!o.faceMaterials){const colors=new Float32Array(o.vertices.length),names=['terrain','water','greenery','roads','runways','railways','buildings'];for(let i=0;i<o.vertices.length/3;i++){const name=names[o.labels[i]||0];const c=new THREE.Color(name==='water'&&settings.colorWater?settings.colorWater:COLORS[name]);colors.set([c.r,c.g,c.b],i*3);}g.setAttribute('color',new THREE.BufferAttribute(colors,3));material.vertexColors=true;material.color.set(0xffffff);}
       if(o.faceMaterials){
         const indexed=g;g=g.toNonIndexed();indexed.dispose();const colors=new Float32Array(o.indices.length*3);
         const palette=o.materials.map(m=>new THREE.Color(m.color||COLORS[m.feature]||COLORS.terrain));

@@ -21,6 +21,8 @@ test('STL and 3MF retain dimensions, units, material colors and XML escaping',()
 test('terrain PNG decoding supports negative heights and missing values',()=>{close(decodeElevation(128,100,128,'terrarium'),100.5);assert.ok(Number.isNaN(decodeElevation(0,0,0,'terrarium')));close(decodeElevation(0,39,16,'dem5a_png'),100);close(decodeElevation(255,216,240,'dem5a_png'),-100);assert.ok(Number.isNaN(decodeElevation(128,0,0,'dem5a_png')));});
 test('small elevation gaps fill; missing regions never become flat zero terrain',()=>{const grid=new Float32Array(100).fill(50);grid[55]=NaN;assert.equal(fillVoids(grid,10,10).filled,1);close(grid[55],50);assert.throws(()=>fillVoids(new Float32Array(100).fill(NaN),10,10),/No elevation/);const bad=new Float32Array(100).fill(50);bad.fill(NaN,0,10);assert.throws(()=>fillVoids(bad,10,10),/no elevation/);});
 test('local GeoTIFF preserves georeferencing and integer no-data values',async()=>{const values=new Uint8Array(16).fill(120);values[0]=255;const buffer=writeArrayBuffer(values,{width:4,height:4,BitsPerSample:[8],SampleFormat:[1],ModelPixelScale:[.001,.001,0],ModelTiepoint:[0,0,0,139,36,0],GeographicTypeGeoKey:4326,GTModelTypeGeoKey:2,GTRasterTypeGeoKey:1,GDAL_NODATA:'255'});const info=await inspectTIFF(buffer);close(info.bounds.west,139);close(info.bounds.south,35.996);const grid=await tiffGrid(buffer,info.bounds,5,5);assert.ok(Number.isNaN(grid[0]));close(grid.at(-1),120);});
+test('float GeoTIFF no-data stays empty instead of becoming sea level',async()=>{const {readFile}=await import('node:fs/promises');const buffer=await readFile(new URL('./fixtures/ea-nodata.tif',import.meta.url));const info=await inspectTIFF(buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength));const grid=await tiffGrid(buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength),info.bounds,5,5);assert.ok(grid.every(v=>Number.isNaN(v)));});
+test('large areas use much finer posts than print spacing alone',()=>{const print=gridSize(240,450,.35,2,2),island=gridSize(240,450,.35,2,2,145000,273000);assert.ok(island.w*island.h>print.w*print.h*4);assert.ok(145000/(island.w-1)<110);assert.ok(3000/(gridSize(240,240,.35,2,2,3000,3000).w-1)<6);});
 test('terrain 3MF keeps feature face colors on a single watertight surface',()=>{const surface={w:3,h:3,heights:new Float32Array(9).fill(3),labels:new Uint8Array(9).fill(6)},m=fullSurface(surface,{width:10,height:10}),xml=strFromU8(unzipSync(threeMF([m]))['3D/3dmodel.model']);closed(m);assert.match(xml,/name="buildings"/);assert.match(xml,/<triangle[^>]+pid="1" p1="1"/);});
 test('OSM lines buffer in metres and relation segments assemble courtyard holes',()=>{const joined=joinRings([[[0,0],[1,0]],[[1,1],[1,0]],[[0,1],[1,1]],[[0,0],[0,1]]]);assert.equal(joined.length,1);assert.deepEqual(joined[0][0],joined[0].at(-1));const b={west:0,east:.01,south:0,north:.01},s={width:100,buildingHeight:8,buildingScale:2,roadHeight:.5,roadWidth:1,greenHeight:.2,waterHeight:.1};const f=osmFeatures({elements:[{type:'way',id:1,tags:{highway:'residential'},geometry:[{lon:.001,lat:.005},{lon:.009,lat:.005}]}]},b,s);assert.equal(f.length,1);assert.equal(f[0].group,'roads');close(f[0].height,.5);assert.ok(f[0].bounds[3]-f[0].bounds[1]>.5);});
 
@@ -118,6 +120,15 @@ test('exaggeration keeps the base under the lowest terrain sample',async()=>{
   }
 });
 
+test('a lake is colored as water without raising the surface',async()=>{
+  const {surfaceHeights}=await import('../src/engine.js');
+  const grid=Float32Array.from([100,100,100,500]);
+  const settings={base:2,relief:10,exaggeration:1,flattenOcean:false,terrainScale:'relief',terrainMode:'smooth',smooth:0,width:10,height:10};
+  const feature={group:'water',height:4,colorOnly:true,bounds:[-1,-1,11,11],polygons:[[[[-1,-1],[11,-1],[11,11],[-1,11],[-1,-1]]]]};
+  const plain=surfaceHeights({grid,w:2,h:2,min:100,max:500},[],settings);
+  const lake=surfaceHeights({grid,w:2,h:2,min:100,max:500},[feature],settings);
+  assert.equal(lake.labels[0],1);assert.equal(lake.heights[0],plain.heights[0]);assert.equal(lake.heights[3],plain.heights[3]);
+});
 test('a sea-level sample does not lift the surrounding land off the base',async()=>{
   const {surfaceHeights}=await import('../src/engine.js');
   const grid=Float32Array.from([0,1500,1500,1800]);
