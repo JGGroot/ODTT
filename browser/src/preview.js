@@ -13,7 +13,7 @@ export class Preview {
   }
   resize(){const w=this.container.clientWidth,h=this.container.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();}
   clear(group){for(const child of [...group.children]){group.remove(child);child.geometry?.dispose();if(Array.isArray(child.material))child.material.forEach(m=>m.dispose());else child.material?.dispose();}}
-  setModel(tiles,settings){
+  setModel(tiles,settings,preserveView=false){
     this.clear(this.group);this.clear(this.overlays);this.settings=settings;
     for(const tile of tiles)for(const o of tile.objects){
       let g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(o.vertices,3));g.setIndex(new THREE.BufferAttribute(o.indices,1));g.computeVertexNormals();
@@ -30,7 +30,8 @@ export class Preview {
     }
     const box=new THREE.Box3().setFromObject(this.group),maxZ=box.max.z;
     const lines=[];for(let c=0;c<=settings.cols;c++){const x=c*settings.width/settings.cols;lines.push(x,0,maxZ+.3,x,settings.height,maxZ+.3);}for(let r=0;r<=settings.rows;r++){const y=r*settings.height/settings.rows;lines.push(0,y,maxZ+.3,settings.width,y,maxZ+.3);}
-    const lineGeo=new THREE.BufferGeometry();lineGeo.setAttribute('position',new THREE.Float32BufferAttribute(lines,3));this.overlays.add(new THREE.LineSegments(lineGeo,new THREE.LineBasicMaterial({color:0x285d50,transparent:true,opacity:.28})));this.overlays.visible=this.gridOn;this.fit();
+    const lineGeo=new THREE.BufferGeometry();lineGeo.setAttribute('position',new THREE.Float32BufferAttribute(lines,3));this.overlays.add(new THREE.LineSegments(lineGeo,new THREE.LineBasicMaterial({color:0x285d50,transparent:true,opacity:.28})));this.overlays.visible=this.gridOn;
+    if(!preserveView||!this.hasFitted){this.fit();this.hasFitted=true;}else{this.controls.update();}
   }
   fit(top=false){if(!this.group.children.length)return;const box=new THREE.Box3().setFromObject(this.group),center=box.getCenter(new THREE.Vector3()),direction=(top?new THREE.Vector3(.00001,-.00001,1):new THREE.Vector3(.75,-.9,.82)).normalize(),right=new THREE.Vector3().crossVectors(this.camera.up,direction).normalize(),up=new THREE.Vector3().crossVectors(direction,right),tan=Math.tan(THREE.MathUtils.degToRad(this.camera.fov/2));let distance=1;for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const p=new THREE.Vector3(x,y,z).sub(center);distance=Math.max(distance,p.dot(direction)+Math.abs(p.dot(right))/(tan*this.camera.aspect),p.dot(direction)+Math.abs(p.dot(up))/tan);}distance*=1.15;this.controls.target.copy(center);this.camera.position.copy(center).addScaledVector(direction,distance);this.camera.near=Math.max(.01,distance/10000);this.camera.far=distance*10;this.camera.updateProjectionMatrix();this.controls.update();}
   setGrid(value){this.gridOn=value;this.overlays.visible=value;}
