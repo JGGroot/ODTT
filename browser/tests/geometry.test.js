@@ -140,6 +140,15 @@ test('a sea-level sample does not lift the surrounding land off the base',async(
   close(scaled.heights[0],3);close(scaled.heights[1],3);close(scaled.heights[3],3+(1800-1500)*shared.scale*4);
 });
 
+test('ocean is colored as water and flattened to base, regardless of flatten ocean setting',async()=>{
+  const {surfaceHeights}=await import('../src/engine.js');
+  const grid=Float32Array.from([0,0,100,500]);
+  const flat=surfaceHeights({grid,w:2,h:2,min:0,max:500},[],{base:2,relief:10,flattenOcean:true,terrainMode:'smooth',smooth:0,width:10,height:10});
+  assert.equal(flat.labels[0],1);assert.equal(flat.labels[1],1);assert.equal(flat.labels[2],0);assert.equal(flat.heights[0],2);
+  const unflat=surfaceHeights({grid,w:2,h:2,min:0,max:500},[],{base:2,relief:10,flattenOcean:false,terrainMode:'smooth',smooth:0,width:10,height:10});
+  assert.equal(unflat.labels[0],1);assert.equal(unflat.labels[1],1);assert.equal(unflat.labels[2],0);
+});
+
 test('Skadi ocean voids become sea level only when ocean flattening is enabled',async()=>{
   const {gzipSync}=await import('fflate');const original=globalThis.fetch;const bytes=new Uint8Array(8),view=new DataView(bytes.buffer);for(let i=0;i<4;i++)view.setInt16(i*2,-32768,false);
   globalThis.fetch=async()=>new Response(gzipSync(bytes));

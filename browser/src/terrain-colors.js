@@ -106,7 +106,9 @@ export function paintTerrain(objects,s,origin=[0,0]) {
         const slope=Math.atan2(Math.hypot(nx,ny)/Math.max(.000001,s.colorZToXY||1),Math.abs(nz))*180/Math.PI;
         if(nz>0&&slope>=(s.rockSlope||38))code=3;
       }
-      const labels=ids.map(i=>o.labels?.[i]||0),label=labels[1]===labels[2]?labels[1]:labels[0];
+      const labels=ids.map(i=>o.labels?.[i]||0);
+      let label=labels[1]===labels[2]?labels[1]:labels[0];
+      if(!label&&labels.some(l=>l===1)&&ids.some(id=>id>=o.labels.length)&&z<=s.base+0.01)label=1;
       if(label){if(!featureIndex.has(label)){const material={name:FEATURE_NAMES[label],feature:FEATURE_NAMES[label]};if(label===1)material.color=s.colorWater||'#2f6f9f';featureIndex.set(label,materials.length);materials.push(material);}code=featureIndex.get(label);}
       faceMaterials[j/3]=code;
     }
